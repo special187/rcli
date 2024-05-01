@@ -1,15 +1,16 @@
 mod b64;
 mod csv;
 mod genpass;
+mod http;
 mod text;
 
 pub use self::csv::*;
 pub use b64::*;
 use clap::Parser;
 use genpass::GenPassOpts;
+pub use http::*;
 use std::path::{Path, PathBuf};
 pub use text::*;
-
 #[derive(Debug, Parser)]
 #[command(name = "cli")]
 pub struct Opts {
@@ -27,10 +28,12 @@ pub enum SubCommand {
     Base64(Base64SubCommand),
     #[command(subcommand)]
     Text(TextSubCommand),
+    #[command(subcommand)]
+    Http(HttpSubCommand),
 }
 
 fn verify_file(filename: &str) -> Result<String, &'static str> {
-    if filename == "-" || std::path::Path::new(filename).exists() {
+    if filename == "-" || Path::new(filename).exists() {
         Ok(filename.into())
     } else {
         Err("File does not exist")
