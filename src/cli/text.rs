@@ -1,9 +1,18 @@
 use super::{verify_file, verify_path};
+use crate::{
+    get_content, get_reader, process_text_key_generate, process_text_sign, process_text_verify,
+    CmdExecutor,
+};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use clap::Parser;
+use enum_dispatch::enum_dispatch;
 use std::path::PathBuf;
 use std::{fmt, str::FromStr};
+use tokio::fs;
 
 #[derive(Debug, Parser)]
+#[enum_dispatch(CmdExecutor)]
 pub enum TextSubCommand {
     #[command(about = "Sign a message with a private/shared key")]
     Sign(TextSignOpts),
@@ -27,6 +36,17 @@ pub struct TextSignOpts {
     pub format: TextSignFormat,
 }
 
+impl CmdExecutor for TextSignOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let sign = process_text_sign(&mut reader, &key, self.format)?;
+        let encode = URL_SAFE_NO_PAD.encode(sign);
+        println!("{}", encode);
+        Ok(())
+    }
+}
+
 #[derive(Debug, Parser)]
 pub struct TextVerifyOpts {
     #[arg(short, long, value_parser=verify_file, default_value = "-")]
@@ -40,6 +60,23 @@ pub struct TextVerifyOpts {
     #[arg(short, long)]
     pub sig: String,
 }
+
+impl CmdExecutor for TextVerifyOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let sign = get_content(&self.sig)?;
+        let sign = URL_SAFE_NO_PAD.decode(sign)?;
+        let verified = process_text_verify(&mut reader, &key, &sign, self.format)?;
+        if verified {
+            println!("✓ Signature verified");
+        } else {
+            println!("⚠ Signature not verified");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Parser)]
 pub struct KeyGenerateOpts {
     #[arg(long, value_parser=parse_text_sign_format, default_value = "blake3")]
@@ -47,6 +84,16 @@ pub struct KeyGenerateOpts {
 
     #[arg(short, long, value_parser=verify_path)]
     pub output_path: PathBuf,
+}
+
+impl CmdExecutor for KeyGenerateOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let key = process_text_key_generate(self.format)?;
+        for (k, v) in key {
+            fs::write(self.output_path.join(k), v).await?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
